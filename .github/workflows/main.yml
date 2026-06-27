@@ -5,7 +5,7 @@ on:
     branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
-  workflow_dispatch: # 支持手动点击按钮触发编译喵！
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,7 +15,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        submodules: recursive # 自动拉取可能存在的子模块喵
+        submodules: recursive
 
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v2
@@ -25,18 +25,23 @@ jobs:
 
     - name: Restore NuGet packages
       run: |
-        if (Test-Path **/*.sln) {
-          nuget restore (Get-ChildItem -Filter *.sln -Recurse).FullName
+        $sln = Get-ChildItem -Filter *.sln -Depth 1 | Select-Object -First 1
+        if (-not $sln) { $sln = Get-ChildItem -Filter *.sln -Recurse | Where-Object { $_.FullName -notlike "*\libs\*" } | Select-Object -First 1 }
+        if ($sln) {
+          nuget restore $sln.FullName
         }
 
     - name: Build Solution
       run: |
-        $sln = Get-ChildItem -Filter *.sln -Recurse | Select-Object -First 1
+        # 自动过滤掉 libs 文件夹内的干扰 sln 喵！
+        $sln = Get-ChildItem -Filter *.sln -Depth 1 | Select-Object -First 1
+        if (-not $sln) { $sln = Get-ChildItem -Filter *.sln -Recurse | Where-Object { $_.FullName -notlike "*\libs\*" } | Select-Object -First 1 }
+        
         if ($sln) {
-          echo "Found solution: $($sln.FullName), building..."
-          msbuild /p:Configuration=Release /p:Platform=x64 $($sln.FullName)
+          echo "Found main solution: $($sln.FullName), building..."
+          msbuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 $($sln.FullName)
         } else {
-          echo "No .sln file found. Trying CMake..."
+          echo "No root .sln file found. Trying CMake..."
           if (Test-Path CMakeLists.txt) {
             cmake -B build -DCMAKE_BUILD_TYPE=Release
             cmake --build build --config Release
